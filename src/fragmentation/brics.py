@@ -1,4 +1,4 @@
-from fragmentation.fragmentation import Unit, Connection, Fragmentation, FragmentedGraph
+from fragmentation.fragmentation import Unit, Connection, Fragmentation, FragmentedGraph, BlockLibrary
 from rdkit import Chem
 from rdkit.Chem import BRICS
 from fragmentation.utils import *
@@ -17,7 +17,7 @@ class BRICS_Unit(Unit):
         bondtype = connection.bondtype
 
         rwmol = Chem.RWMol(submol)
-        add_dummy_atom(rwmol, atom_index, bondtype)
+        add_dummy_atom(rwmol, atom_index, bondtype, brics_label)
         fragment = rwmol.GetMol()
         fragment = Chem.MolFromSmiles(Chem.MolToSmiles(fragment))
         return fragment
@@ -55,7 +55,7 @@ class BRICS_FragmentedGraph(FragmentedGraph):
             connection = BRICS_Connection(
                 unit1, unit2, atom_idx1, atom_idx2, brics_label1, brics_label2, bond_index, bondtype
             )
-        connections = (connections)
+        connections = (connection)
         
         return units, connections
     
@@ -65,4 +65,13 @@ def brics_fragmentation(mol):
 class BRICS_Fragmentation(Fragmentation):
     fragmentation = staticmethod(brics_fragmentation)
 
-class BRICS_BlockLibrary()
+class BRICS_BlockLibrary(BlockLibrary):
+    fragmentation = BRICS_Fragmentation()
+
+    @property
+    def brics_label_list(self):
+        def get_brics_label(rdmol: Mol):
+            return str(rdmol.GetAtomWithIdx(0).GetIsotope())
+        
+        brics_labels: list[str] = [get_brics_label(rdmol) for rdmol in self.rdmol_list]
+        return brics_labels
