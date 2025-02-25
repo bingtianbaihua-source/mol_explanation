@@ -1,7 +1,8 @@
 import torch
 from torch import Tensor, LongTensor
 import torch.nn as nn
-from typing import OrderedDict
+from typing import OrderedDict, Dict, List
+from functools import partial
 from model.layer.graph_embedding import GraphEmbeddingModel
 from model.layer.property_prediction import MultiHeadPropertyClassificationModel
 from model.layer.condition_embedding import ConditionEmbeddingModel
@@ -18,7 +19,7 @@ class BlockConnectionPredictor(nn.Module):
     def __init__(self, 
                  config,
                  property_information: OrderedDict[str, tuple[float, float]]):
-        super(BlockConnectionPredictor, self).__init__()
+        super().__init__()
         self.config = config
         self.property_information = property_information
         self.property_dim = len(property_information)
@@ -45,37 +46,39 @@ class BlockConnectionPredictor(nn.Module):
         self.atom_selection = AtomSelectionModel(
             NUM_BOND_FEATURES, **config.AtomSelection)
 
-    def core_molecule_embedding(self, batch: PyGBatch | PyGData):
-        return self.core_graph_embedding.forward_batch(batch)
+    def molecule_embedding(self, batch: PyGBatch | PyGData, is_core: bool = True):
+        return self.core_graph_embedding.forward_batch(batch) if is_core else self.block_graph_embedding.forward_batch(batch)
     
-    def building_block_embedding(self, batch: PyGBatch | PyGData):
-        return self.block_graph_embedding.forward_batch(batch)
+    def standardize_condition(self, condition: Dict[str, FloatTensor]) -> Tensor:
+        property_list = [torch.zeros(2).scatter_(0, torch.tensor([value]), 1) for key, value in condition.items()]
+        return torch.stack(property_list, dim=-1)
     
-    def get_property_prediction(self, Z_core: GlobalVector):
+    def get_property_prediction(self, Z_core: GlobalVector) -> Tensor:
         return self.property_prediction(Z_core)
     
-    def embed_condition(self, x_upd_core: NodeVector, Z_core: GraphVector, condition: dict[str, int], node2graph_core: LongTensor = None):
+    def embed_condition(self, x_upd_core: NodeVector, Z_core: GraphVector, condition: Dict[str, int], node2graph_core: LongTensor = None) -> Tensor:
         return self.condition_embedding(x_upd_core, Z_core, condition, node2graph_core)
     
-    def get_termination_logit(self, Z_core: GraphVector):
+    def get_termination_logit(self, Z_core: GraphVector) -> Tensor:
         return self.termination_prediction(Z_core, return_logit=True)
         
-    def get_termination_probability(self, Z_core: GraphVector):
+    def get_termination_probability(self, Z_core: GraphVector) -> Tensor:
         return self.termination_prediction(Z_core, return_logit=False)
     
-    def get_block_priority(self, Z_core: GraphVector, Z_block: GraphVector):
+    def get_block_priority(self, Z_core: GraphVector, Z_block: GraphVector) -> Tensor:
         return self.block_selection(Z_core, Z_block)
     
-    def get_atom_probability_distribution(self, x_upd_core: NodeVector, edge_index_core: Adj, edge_attr_core: EdgeVector, Z_core: GraphVector, Z_block: GraphVector, node2graph_core: LongTensor = None):
+    def get_atom_probability_distribution(self, x_upd_core: NodeVector, edge_index_core: Adj, edge_attr_core: EdgeVector, Z_core: GraphVector, Z_block: GraphVector, node2graph_core: LongTensor = None) -> Tensor:
         return self.atom_selection(x_upd_core, edge_index_core, edge_attr_core, Z_core, Z_block, node2graph_core)
     
-    def get_atom_probability_logit(self, x_upd_core: NodeVector, edge_index_core: Adj, edge_attr_core: EdgeVector, Z_core: GraphVector, Z_block: GraphVector, node2graph_core: LongTensor = None):
+    def get_atom_probability_logit(self, x_upd_core: NodeVector, edge_index_core: Adj, edge_attr_core: EdgeVector, Z_core: GraphVector, Z_block: GraphVector, node2graph_core: LongTensor = None) -> Tensor:
         return self.atom_selection(x_upd_core, edge_index_core, edge_attr_core, Z_core, Z_block, node2graph_core, return_logit=True)
     
     def initialize_model(self):
-        for param in self.parameters():
-            if param.dim() > 1:
-                nn.init.xavier_normal_(param)
+        with torch.no_grad():
+            for param in self.parameters():
+                if param.dim() > 1:
+                    nn.init.xavier_normal_(param)
 
     def save(self, save_path: str):
         torch.save({
@@ -90,8 +93,30 @@ class BlockConnectionPredictor(nn.Module):
         return cls.load_from_checkpoint(checkpoint, map_location)
     
     @classmethod
-    def load_from_checkpoint(cls, checkpoint: dict, map_location: str = 'cpu'):
+    def load_from_checkpoint(cls, checkpoint: Dict, map_location: str = 'cpu'):
         model = cls(checkpoint['config'], checkpoint['property_information'])
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(map_location)
         return model
+    
+class MultiTaskLoss(nn.Module):
+    def __init__(self, task_weights: list[float] = None):
+        super().__init__()
+        self.task_weights = task_weights
+
+    def forward(self, outputs: list[Tensor], targets: list[Tensor]) -> Tensor:
+        """
+        Args:
+            outputs: List of task logits [ (B, C1), (B, C2), ... ]
+            targets: List of task labels [ (B,), (B,), ... ]
+        """
+        total_loss = 0.0
+        for i, (logits, y) in enumerate(zip(outputs, targets)):
+            # 计算每个任务的交叉熵损失
+            loss = nn.functional.cross_entropy(logits, y)
+            
+            # 应用任务权重
+            weight = 1.0 if self.task_weights is None else self.task_weights[i]
+            total_loss += weight * loss
+            
+        return total_loss
