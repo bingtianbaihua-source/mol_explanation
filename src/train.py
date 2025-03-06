@@ -9,3 +9,4 @@ from torch_geometric.data import Data as PyGData, Batch as PyGBatch
 from train_util.dataset import MyDataset
 from model.network import BlockConnectionPredictor
 from utils.typing import *
+from model.layer.property_prediction import DynamicWeightLoss

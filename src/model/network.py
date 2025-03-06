@@ -13,6 +13,8 @@ from utils.typing import *
 from transform import NUM_ATOM_FEATURES, NUM_BLOCK_FEATURES, NUM_BOND_FEATURES
 from torch_geometric.data import Data as PyGData, Batch as PyGBatch
 from torch_geometric.typing import Adj
+from torch.nn import functional as F
+from model.layer.property_prediction import DynamicWeightLoss
 
 class BlockConnectionPredictor(nn.Module):
 
@@ -33,6 +35,7 @@ class BlockConnectionPredictor(nn.Module):
         num_classes_list = [2 for _ in range(self.property_dim)]
         self.property_prediction = MultiHeadPropertyClassificationModel(
             num_classes=num_classes_list, **config.PropertyPredictionModel)
+        self.property_loss_fn = DynamicWeightLoss()
 
         self.condition_embedding = ConditionEmbeddingModel(
             condition_dim=self.property_dim, **config.ConditionEmbedding)
@@ -56,6 +59,9 @@ class BlockConnectionPredictor(nn.Module):
     def get_property_prediction(self, Z_core: GlobalVector) -> Tensor:
         return self.property_prediction(Z_core)
     
+    def get_properity_loss(self, outputs: list[Tensor], targets: list[Tensor]):
+        return self.property_loss_fn(outputs, targets)
+
     def embed_condition(self, x_upd_core: NodeVector, Z_core: GraphVector, condition: Dict[str, int], node2graph_core: LongTensor = None) -> Tensor:
         return self.condition_embedding(x_upd_core, Z_core, condition, node2graph_core)
     
@@ -99,24 +105,3 @@ class BlockConnectionPredictor(nn.Module):
         model.to(map_location)
         return model
     
-class MultiTaskLoss(nn.Module):
-    def __init__(self, task_weights: list[float] = None):
-        super().__init__()
-        self.task_weights = task_weights
-
-    def forward(self, outputs: list[Tensor], targets: list[Tensor]) -> Tensor:
-        """
-        Args:
-            outputs: List of task logits [ (B, C1), (B, C2), ... ]
-            targets: List of task labels [ (B,), (B,), ... ]
-        """
-        total_loss = 0.0
-        for i, (logits, y) in enumerate(zip(outputs, targets)):
-            # 计算每个任务的交叉熵损失
-            loss = nn.functional.cross_entropy(logits, y)
-            
-            # 应用任务权重
-            weight = 1.0 if self.task_weights is None else self.task_weights[i]
-            total_loss += weight * loss
-            
-        return total_loss
