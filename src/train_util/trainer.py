@@ -161,8 +161,13 @@ class Trainer:
                 if self.global_step == self.max_step:
                     break
                 if self.global_step % self.val_interval == 0:
-                    val_loss_dict = self
-                    pass
+                    val_loss_dict = self.validate()
+                    schedular.step(val_loss_dict['loss'])
+        
+        self.validate()
+        save_path = os.path.join(self.save_dir, 'last.tar')
+        self.model.save(save_path)
+        logging.info('Train end')
 
     @torch.no_grad
     def validate(self):
@@ -173,7 +178,35 @@ class Trainer:
         agg_loss_dict = []
         for _ in range(self.num_validate):
             for batch in self.val_dataloader:
-                loss_dict = self.run_step()oi
+                loss_dict = self.run_step(batch, None, 'val')
+                agg_loss_dict.append(loss_dict)
+        loss_dict = self.aggregate_loss_dict(agg_loss_dict)
+
+        loss = loss_dict['loss']
+        if loss < self.min_loss:
+            self.min_loss = loss
+            save_path = os.path.join(self.save_dir, f'best.tar')
+            self.model.save(save_path)
+            self.print_metrics(loss_dict, prefix='VAL best')
+        else:
+            self.print_metrics(loss_dict, prefix='VAL')
+        self.log_metrics(loss_dict, prefix='VAL')
+
+        self.Z_library = None
+        self.library_pygbatch.to('cpu')
+        self.model.train()
+
+        return loss_dict
+
+    def aggregate_loss_dict(self, loss_dict_list):
+        sum_loss = {}
+        num_loss = {}
+        for loss_dict in loss_dict_list:
+            for key, val in loss_dict.items(): 
+                sum_loss[key] = sum_loss.setdefault(key, 0) + val
+                num_loss[key] = num_loss.setdefault(key, 0) + 1
+        mean_loss_dict = {key: sum_loss[key] / num_loss[key] for key in sum_loss.keys()}
+        return mean_loss_dict
 
     def run_step(self, batch, optimizer, step_type: str):
         assert step_type in ['train', 'val']
