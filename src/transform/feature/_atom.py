@@ -5,7 +5,8 @@ from rdkit.Chem import Atom, Mol
 
 __all__ = ['get_atom_features', 'NUM_ATOM_FEATURES']
 
-ATOM_SYMBOL = ('*', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I')
+ATOM_SYMBOL = ('*', 'C', 'N', 'O', 'F', 'P', 'S', 'Cl', 'Br', 'I', 
+               'Na', 'Mg', 'Al', 'Si', 'K', 'Ca', 'Fe', 'Cu', 'Zn')
 DEGREE = (0, 1, 2, 3, 4, 5, 6)
 VALENCE = (0, 1, 2, 3, 4, 5, 6)
 FORMAL_CHARGE = (-1, 0, 1)

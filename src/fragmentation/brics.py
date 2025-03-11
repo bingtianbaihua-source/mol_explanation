@@ -55,7 +55,8 @@ class BRICS_FragmentedGraph(FragmentedGraph):
             connection = BRICS_Connection(
                 unit1, unit2, atom_idx1, atom_idx2, brics_label1, brics_label2, bond_index, bondtype
             )
-        connections = (connection)
+            connections.append(connection)
+        connections = (connections)
         
         return units, connections
     

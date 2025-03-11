@@ -1,18 +1,23 @@
 import logging
 import os
 
-def setup_logger(run_dir, print_time = True, print_file = False):
+def setup_logger(run_dir, print_time = True, print_name = False):
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(message)s')
-    if print_time:
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-    if print_file:
-        file_handler = logging.FileHandler(os.path.join(run_dir, 'log.txt'))
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    return logger
+    log_file = os.path.join(run_dir, 'output.log')
+    streamhandler = logging.StreamHandler()
+    filehandler = logging.FileHandler(log_file, 'w')
+    logger.addHandler(streamhandler)
+    logger.addHandler(filehandler)
+    logger.setLevel('INFO')
+
+    fmt = ''
+    datafmt = None
+    if print_time is True:
+        fmt += '[%(asctime)s] '
+        datafmt = '%Y-%m-%d %H:%M:%S'
+    if print_name is True:
+        fmt += '[%(name)s]'
+    fmt += '%(message)s'
+    formatter = logging.Formatter(fmt=fmt, datefmt=datafmt)
+    for handler in logger.handlers:
+        handler.setFormatter(formatter)
