@@ -337,7 +337,7 @@ class Trainer:
         y_property = cond[y_term]
         Z_core = Z_core[y_term]
         y_hat_property = self.model.get_property_prediction(Z_core)
-        loss_property = self.model.get_properity_loss(y_hat_property, cond)
+        loss_property = self.model.get_properity_loss(y_hat_property, y_property)
         return loss_property
 
     def core_mol_embedding(self, pygbatch_core: PyGBatch):
